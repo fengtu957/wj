@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>创建投票</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+            font-size: 28px;
+        }
+        .form-group {
+            margin-bottom: 25px;
+        }
+        label {
+            display: block;
+            color: #555;
+            font-weight: 600;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .options-container {
+            margin-bottom: 20px;
+        }
+        .option-item {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .option-item input {
+            flex: 1;
+        }
+        .btn-remove {
+            padding: 12px 20px;
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+        .btn-remove:hover {
+            background: #ee5a52;
+        }
+        .btn-add, .btn-submit {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        .btn-add {
+            background: #51cf66;
+            color: white;
+            width: 100%;
+            margin-bottom: 20px;
+        }
+        .btn-add:hover {
+            background: #40c057;
+        }
+        .btn-submit {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 100%;
+            font-size: 18px;
+        }
+        .btn-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.4);
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 创建投票</h1>
+        <form id="createForm">
+            <div class="form-group">
+                <label for="title">投票标题</label>
+                <input type="text" id="title" name="title" required placeholder="请输入投票标题">
+            </div>
+
+            <div class="form-group">
+                <label>投票选项</label>
+                <div id="optionsContainer" class="options-container">
+                    <div class="option-item">
+                        <input type="text" name="option" placeholder="选项 1" required>
+                    </div>
+                    <div class="option-item">
+                        <input type="text" name="option" placeholder="选项 2" required>
+                    </div>
+                </div>
+                <button type="button" class="btn-add" onclick="addOption()">+ 添加选项</button>
+            </div>
+
+            <div class="form-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="multiSelect" name="multiSelect" onchange="toggleChoiceLimits()">
+                    <label for="multiSelect" style="margin: 0;">允许多选</label>
+                </div>
+            </div>
+
+            <div id="choiceLimits" style="display: none;">
+                <div class="form-group">
+                    <label for="minChoices">最少选择数量（0表示无限制）</label>
+                    <input type="number" id="minChoices" name="minChoices" min="0" value="0" placeholder="最少选择几个">
+                </div>
+
+                <div class="form-group">
+                    <label for="maxChoices">最多选择数量（0表示无限制）</label>
+                    <input type="number" id="maxChoices" name="maxChoices" min="0" value="0" placeholder="最多选择几个">
+                </div>
+            </div>
+
+            <button type="submit" class="btn-submit">创建投票</button>
+        </form>
+    </div>
+
+    <script>
+        let optionCount = 2;
+
+        function toggleChoiceLimits() {
+            const multiSelect = document.getElementById('multiSelect').checked;
+            const limitsDiv = document.getElementById('choiceLimits');
+            limitsDiv.style.display = multiSelect ? 'block' : 'none';
+        }
+
+        function addOption() {
+            optionCount++;
+            const container = document.getElementById('optionsContainer');
+            const div = document.createElement('div');
+            div.className = 'option-item';
+            div.innerHTML = `
+                <input type="text" name="option" placeholder="选项 ${optionCount}" required>
+                <button type="button" class="btn-remove" onclick="removeOption(this)">删除</button>
+            `;
+            container.appendChild(div);
+        }
+
+        function removeOption(btn) {
+            btn.parentElement.remove();
+        }
+
+        document.getElementById('createForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const title = document.getElementById('title').value;
+            const multiSelect = document.getElementById('multiSelect').checked;
+            const minChoices = parseInt(document.getElementById('minChoices').value) || 0;
+            const maxChoices = parseInt(document.getElementById('maxChoices').value) || 0;
+            const optionInputs = document.querySelectorAll('input[name="option"]');
+            const options = Array.from(optionInputs).map(input => input.value).filter(v => v.trim());
+
+            if (options.length < 2) {
+                alert('至少需要2个选项');
+                return;
+            }
+
+            if (multiSelect && minChoices > 0 && minChoices > options.length) {
+                alert('最少选择数量不能大于总选项数');
+                return;
+            }
+
+            if (multiSelect && maxChoices > 0 && maxChoices > options.length) {
+                alert('最多选择数量不能大于总选项数');
+                return;
+            }
+
+            if (multiSelect && minChoices > 0 && maxChoices > 0 && minChoices > maxChoices) {
+                alert('最少选择数量不能大于最多选择数量');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/create-poll', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        title,
+                        options,
+                        multi_select: multiSelect,
+                        min_choices: multiSelect ? minChoices : 0,
+                        max_choices: multiSelect ? maxChoices : 0
+                    })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    window.location.href = '/poll/' + data.poll_id;
+                } else {
+                    alert('创建失败: ' + data.error);
+                }
+            } catch (error) {
+                alert('创建失败: ' + error.message);
+            }
+        });
+    </script>
+</body>
+</html>

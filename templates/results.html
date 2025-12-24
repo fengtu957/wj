@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.Title}} - 投票结果</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 40px auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 40px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        .total-votes {
+            color: #667eea;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 30px;
+        }
+        .result-item {
+            margin-bottom: 25px;
+        }
+        .result-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        .option-name {
+            color: #333;
+            font-weight: 500;
+        }
+        .vote-count {
+            color: #667eea;
+            font-weight: 600;
+        }
+        .bar-container {
+            background: #f0f0f0;
+            border-radius: 10px;
+            height: 40px;
+            overflow: hidden;
+            position: relative;
+        }
+        .bar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100%;
+            border-radius: 10px;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 15px;
+            color: white;
+            font-weight: 600;
+            min-width: 60px;
+        }
+        .btn-back, .btn-qrcode {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+            transition: all 0.3s;
+        }
+        .btn-back {
+            background: #51cf66;
+            color: white;
+        }
+        .btn-back:hover {
+            background: #40c057;
+        }
+        .btn-qrcode {
+            background: #667eea;
+            color: white;
+        }
+        .btn-qrcode:hover {
+            background: #5568d3;
+        }
+
+        /* 二维码弹窗 */
+        .qrcode-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        .qrcode-modal.active {
+            display: flex;
+        }
+        .qrcode-modal-content {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            max-width: 400px;
+            animation: slideDown 0.3s;
+            position: relative;
+        }
+        @keyframes slideDown {
+            from { transform: translateY(-50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 30px;
+            height: 30px;
+            border: none;
+            background: #f0f0f0;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 20px;
+            color: #666;
+            transition: all 0.3s;
+        }
+        .modal-close:hover {
+            background: #e0e0e0;
+            color: #333;
+        }
+        .qrcode-modal-content h3 {
+            margin-bottom: 20px;
+            color: #333;
+        }
+        .qrcode-modal-content img {
+            max-width: 250px;
+            border: 3px solid #f0f0f0;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .btn-download-qr {
+            padding: 12px 30px;
+            background: #51cf66;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .btn-download-qr:hover {
+            background: #40c057;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 {{.Title}}</h1>
+        <div class="total-votes">投票人数: {{.VoterCount}} 人</div>
+
+        {{$voterCount := .VoterCount}}
+        {{range $option, $count := .Votes}}
+        <div class="result-item">
+            <div class="result-label">
+                <span class="option-name">{{$option}}</span>
+                <span class="vote-count">{{$count}} 票</span>
+            </div>
+            <div class="bar-container">
+                {{if eq $voterCount 0}}
+                <div class="bar" style="width: 0%">
+                    0.0%
+                </div>
+                {{else}}
+                <div class="bar" style="width: {{multiply $count 100.0 | divide $voterCount | printf "%.1f"}}%">
+                    {{multiply $count 100.0 | divide $voterCount | printf "%.1f"}}%
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+
+        <button class="btn-qrcode" onclick="showQRCode()">📱 查看分享二维码</button>
+        <button class="btn-back" onclick="window.location.href='/poll/{{.ID}}'">返回投票页</button>
+    </div>
+
+    <!-- 二维码弹窗 -->
+    <div id="qrcodeModal" class="qrcode-modal">
+        <div class="qrcode-modal-content">
+            <button class="modal-close" onclick="closeQRCodeModal()">×</button>
+            <h3>扫描二维码参与投票</h3>
+            <img id="qrcodeImage" src="/qrcode/{{.ID}}" alt="二维码">
+            <br>
+            <button class="btn-download-qr" onclick="downloadQRCode()">下载二维码</button>
+        </div>
+    </div>
+
+    <script>
+        const pollId = '{{.ID}}';
+        const pollTitle = '{{.Title}}';
+
+        function showQRCode() {
+            document.getElementById('qrcodeModal').classList.add('active');
+        }
+
+        function closeQRCodeModal() {
+            document.getElementById('qrcodeModal').classList.remove('active');
+        }
+
+        async function downloadQRCode() {
+            try {
+                const response = await fetch('/qrcode/' + pollId);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = pollTitle + '-二维码.png';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            } catch (error) {
+                alert('下载失败：' + error.message);
+            }
+        }
+
+        // 点击弹窗外部关闭
+        document.getElementById('qrcodeModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeQRCodeModal();
+            }
+        });
+    </script>
+</body>
+</html>
