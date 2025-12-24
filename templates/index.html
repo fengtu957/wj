@@ -486,12 +486,12 @@
             }
         }
 
-        // 点击弹窗外部关闭
-        document.getElementById('qrcodeModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeQRCodeModal();
-            }
-        });
+        // 已禁用：点击弹窗外部关闭功能
+        // document.getElementById('qrcodeModal').addEventListener('click', function(e) {
+        //     if (e.target === this) {
+        //         closeQRCodeModal();
+        //     }
+        // });
 
         // 打开创建弹窗
         function openCreateModal() {
@@ -514,12 +514,12 @@
             document.getElementById('choiceLimits').style.display = 'none';
         }
 
-        // 点击弹窗外部关闭
-        document.getElementById('createModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeCreateModal();
-            }
-        });
+        // 已禁用：点击弹窗外部关闭功能
+        // document.getElementById('createModal').addEventListener('click', function(e) {
+        //     if (e.target === this) {
+        //         closeCreateModal();
+        //     }
+        // });
 
         function toggleChoiceLimits() {
             const multiSelect = document.getElementById('multiSelect').checked;

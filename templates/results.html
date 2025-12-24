@@ -185,8 +185,8 @@
                     0.0%
                 </div>
                 {{else}}
-                <div class="bar" style="width: {{multiply $count 100.0 | divide $voterCount | printf "%.1f"}}%">
-                    {{multiply $count 100.0 | divide $voterCount | printf "%.1f"}}%
+                <div class="bar" style="width: {{divide (multiply $count 100.0) $voterCount | printf "%.1f"}}%">
+                    {{divide (multiply $count 100.0) $voterCount | printf "%.1f"}}%
                 </div>
                 {{end}}
             </div>
