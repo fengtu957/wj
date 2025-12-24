@@ -332,7 +332,7 @@ func qrcodeHandler(w http.ResponseWriter, r *http.Request) {
 	pollID := r.URL.Path[len("/qrcode/"):]
 
 	// 生成投票页面 URL
-	pollURL := fmt.Sprintf("http://localhost:8888/poll/%s", pollID)
+	pollURL := fmt.Sprintf("https://tp.starpix.cn/poll/%s", pollID)
 
 	// 生成二维码
 	qr, err := qrcode.Encode(pollURL, qrcode.Medium, 256)
