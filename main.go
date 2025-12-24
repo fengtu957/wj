@@ -1,16 +1,18 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
 	"net/http"
-	"sync"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	qrcode "github.com/skip2/go-qrcode"
+	_ "modernc.org/sqlite"
 )
 
 // Poll 投票结构
@@ -34,20 +36,48 @@ type VoteRequest struct {
 
 // PollStore 投票存储
 type PollStore struct {
-	mu    sync.RWMutex
-	polls map[string]*Poll
+	db *sql.DB
 }
 
-func NewPollStore() *PollStore {
-	return &PollStore{
-		polls: make(map[string]*Poll),
+func NewPollStore(dbPath string) (*PollStore, error) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, err
 	}
+
+	// 创建表
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS polls (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			options TEXT NOT NULL,
+			multi_select INTEGER NOT NULL,
+			min_choices INTEGER NOT NULL,
+			max_choices INTEGER NOT NULL,
+			voter_count INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL
+		);
+
+		CREATE TABLE IF NOT EXISTS votes (
+			poll_id TEXT NOT NULL,
+			option_name TEXT NOT NULL,
+			vote_count INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (poll_id, option_name),
+			FOREIGN KEY (poll_id) REFERENCES polls(id) ON DELETE CASCADE
+		);
+	`)
+	if err != nil {
+		return nil, err
+	}
+
+	return &PollStore{db: db}, nil
 }
 
-func (ps *PollStore) Create(title string, options []string, multiSelect bool, minChoices, maxChoices int) *Poll {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+func (ps *PollStore) Close() error {
+	return ps.db.Close()
+}
 
+func (ps *PollStore) Create(title string, options []string, multiSelect bool, minChoices, maxChoices int) (*Poll, error) {
 	poll := &Poll{
 		ID:          uuid.New().String(),
 		Title:       title,
@@ -56,71 +86,204 @@ func (ps *PollStore) Create(title string, options []string, multiSelect bool, mi
 		MinChoices:  minChoices,
 		MaxChoices:  maxChoices,
 		Votes:       make(map[string]int),
+		VoterCount:  0,
 		CreatedAt:   time.Now(),
 	}
 
-	// 初始化投票计数
+	// 开始事务
+	tx, err := ps.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	// 插入投票
+	multiSelectInt := 0
+	if multiSelect {
+		multiSelectInt = 1
+	}
+	_, err = tx.Exec(`
+		INSERT INTO polls (id, title, options, multi_select, min_choices, max_choices, voter_count, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, poll.ID, poll.Title, strings.Join(options, "|||"), multiSelectInt, minChoices, maxChoices, 0, poll.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	// 初始化投票选项
 	for _, opt := range options {
+		_, err = tx.Exec(`
+			INSERT INTO votes (poll_id, option_name, vote_count)
+			VALUES (?, ?, 0)
+		`, poll.ID, opt)
+		if err != nil {
+			return nil, err
+		}
 		poll.Votes[opt] = 0
 	}
 
-	ps.polls[poll.ID] = poll
-	return poll
-}
-
-func (ps *PollStore) Get(id string) (*Poll, bool) {
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
-	poll, ok := ps.polls[id]
-	return poll, ok
-}
-
-func (ps *PollStore) GetAll() []*Poll {
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
-
-	polls := make([]*Poll, 0, len(ps.polls))
-	for _, poll := range ps.polls {
-		polls = append(polls, poll)
+	if err = tx.Commit(); err != nil {
+		return nil, err
 	}
-	return polls
+
+	return poll, nil
+}
+
+func (ps *PollStore) Get(id string) (*Poll, error) {
+	var poll Poll
+	var optionsStr string
+	var multiSelectInt int
+	var createdAtStr string
+
+	err := ps.db.QueryRow(`
+		SELECT id, title, options, multi_select, min_choices, max_choices, voter_count, created_at
+		FROM polls
+		WHERE id = ?
+	`, id).Scan(&poll.ID, &poll.Title, &optionsStr, &multiSelectInt, &poll.MinChoices, &poll.MaxChoices, &poll.VoterCount, &createdAtStr)
+	if err != nil {
+		return nil, err
+	}
+
+	poll.MultiSelect = multiSelectInt == 1
+	poll.Options = strings.Split(optionsStr, "|||")
+	poll.CreatedAt, _ = time.Parse("2006-01-02 15:04:05.999999999-07:00", createdAtStr)
+
+	// 获取投票数据
+	poll.Votes = make(map[string]int)
+	rows, err := ps.db.Query(`
+		SELECT option_name, vote_count
+		FROM votes
+		WHERE poll_id = ?
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var optionName string
+		var voteCount int
+		if err := rows.Scan(&optionName, &voteCount); err != nil {
+			return nil, err
+		}
+		poll.Votes[optionName] = voteCount
+	}
+
+	return &poll, nil
+}
+
+func (ps *PollStore) GetAll() ([]*Poll, error) {
+	rows, err := ps.db.Query(`
+		SELECT id, title, options, multi_select, min_choices, max_choices, voter_count, created_at
+		FROM polls
+		ORDER BY created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var polls []*Poll
+	for rows.Next() {
+		var poll Poll
+		var optionsStr string
+		var multiSelectInt int
+		var createdAtStr string
+
+		err := rows.Scan(&poll.ID, &poll.Title, &optionsStr, &multiSelectInt, &poll.MinChoices, &poll.MaxChoices, &poll.VoterCount, &createdAtStr)
+		if err != nil {
+			return nil, err
+		}
+
+		poll.MultiSelect = multiSelectInt == 1
+		poll.Options = strings.Split(optionsStr, "|||")
+		poll.CreatedAt, _ = time.Parse("2006-01-02 15:04:05.999999999-07:00", createdAtStr)
+
+		// 获取投票数据
+		poll.Votes = make(map[string]int)
+		voteRows, err := ps.db.Query(`
+			SELECT option_name, vote_count
+			FROM votes
+			WHERE poll_id = ?
+		`, poll.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		for voteRows.Next() {
+			var optionName string
+			var voteCount int
+			if err := voteRows.Scan(&optionName, &voteCount); err != nil {
+				voteRows.Close()
+				return nil, err
+			}
+			poll.Votes[optionName] = voteCount
+		}
+		voteRows.Close()
+
+		polls = append(polls, &poll)
+	}
+
+	return polls, nil
 }
 
 func (ps *PollStore) Delete(id string) error {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	result, err := ps.db.Exec(`DELETE FROM polls WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
 
-	if _, ok := ps.polls[id]; !ok {
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
 		return fmt.Errorf("poll not found")
 	}
 
-	delete(ps.polls, id)
 	return nil
 }
 
 func (ps *PollStore) AddVote(pollID string, options []string) error {
-	ps.mu.Lock()
-	defer ps.mu.Unlock()
+	tx, err := ps.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 
-	poll, ok := ps.polls[pollID]
-	if !ok {
+	// 检查投票是否存在
+	var exists int
+	err = tx.QueryRow(`SELECT COUNT(*) FROM polls WHERE id = ?`, pollID).Scan(&exists)
+	if err != nil {
+		return err
+	}
+	if exists == 0 {
 		return fmt.Errorf("poll not found")
 	}
 
 	// 增加投票人数
-	poll.VoterCount++
+	_, err = tx.Exec(`UPDATE polls SET voter_count = voter_count + 1 WHERE id = ?`, pollID)
+	if err != nil {
+		return err
+	}
 
 	// 增加每个选项的票数
 	for _, opt := range options {
-		if _, exists := poll.Votes[opt]; exists {
-			poll.Votes[opt]++
+		_, err = tx.Exec(`
+			UPDATE votes
+			SET vote_count = vote_count + 1
+			WHERE poll_id = ? AND option_name = ?
+		`, pollID, opt)
+		if err != nil {
+			return err
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
 
-var store = NewPollStore()
+var store *PollStore
 var templates *template.Template
 
 func init() {
@@ -166,6 +329,13 @@ func init() {
 }
 
 func main() {
+	var err error
+	store, err = NewPollStore("toupiao.db")
+	if err != nil {
+		log.Fatal("初始化数据库失败:", err)
+	}
+	defer store.Close()
+
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/create", createHandler)
 	http.HandleFunc("/api/polls", apiPollsHandler)
@@ -194,7 +364,14 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func apiPollsHandler(w http.ResponseWriter, r *http.Request) {
-	polls := store.GetAll()
+	polls, err := store.GetAll()
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -262,7 +439,14 @@ func apiCreatePollHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	poll := store.Create(req.Title, req.Options, req.MultiSelect, req.MinChoices, req.MaxChoices)
+	poll, err := store.Create(req.Title, req.Options, req.MultiSelect, req.MinChoices, req.MaxChoices)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -273,8 +457,8 @@ func apiCreatePollHandler(w http.ResponseWriter, r *http.Request) {
 
 func pollHandler(w http.ResponseWriter, r *http.Request) {
 	pollID := r.URL.Path[len("/poll/"):]
-	poll, ok := store.Get(pollID)
-	if !ok {
+	poll, err := store.Get(pollID)
+	if err != nil {
 		http.Error(w, "Poll not found", http.StatusNotFound)
 		return
 	}
@@ -316,8 +500,8 @@ func apiVoteHandler(w http.ResponseWriter, r *http.Request) {
 
 func apiResultsHandler(w http.ResponseWriter, r *http.Request) {
 	pollID := r.URL.Path[len("/api/results/"):]
-	poll, ok := store.Get(pollID)
-	if !ok {
+	poll, err := store.Get(pollID)
+	if err != nil {
 		http.Error(w, "Poll not found", http.StatusNotFound)
 		return
 	}
