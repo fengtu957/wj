@@ -330,7 +330,7 @@ func init() {
 
 func main() {
 	var err error
-	store, err = NewPollStore("toupiao.db")
+	store, err = NewPollStore("data/toupiao.db")
 	if err != nil {
 		log.Fatal("初始化数据库失败:", err)
 	}
